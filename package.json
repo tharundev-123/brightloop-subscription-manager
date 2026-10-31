@@ -1,0 +1,26 @@
+{
+  "name": "brightloop-subscription-management",
+  "version": "1.0.0",
+  "description": "Subscription Management System for Brightloop Software",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm run install:backend && npm run install:frontend",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "seed": "cd backend && npm run seed",
+    "db:push": "cd backend && npx prisma db push",
+    "db:studio": "cd backend && npx prisma studio"
+  },
+  "keywords": [
+    "subscription-management",
+    "odoo",
+    "react",
+    "express",
+    "prisma"
+  ],
+  "author": "Brightloop Software Team",
+  "license": "ISC"
+}
+

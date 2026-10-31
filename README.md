@@ -433,3 +433,9 @@ Run `npx tsx scripts/benchmark.ts`:
 - **Dashboard Aggregations (Sum & Count)**: `~5.63 ms`
 - **Requirement Target**: `< 2,000 ms` (**~300x faster than required**)
 
+### Team members
+- Tharun dev M C (Leader)
+- Ashish Kumar Rawat
+- Saim quadeer
+- Amaan Ahmad
+

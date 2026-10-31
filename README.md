@@ -250,6 +250,14 @@ npm run test
 
 ---
 
+## 👥 Team Members
+- **Tharun dev M C** (Leader)
+- **Ashish Kumar Rawat**
+- **Saim quadeer**
+- **Amaan Ahmad**
+
+---
+
 ## ❓ Troubleshooting & FAQ
 
 ### 1. Port 5000 or 5173 is already in use

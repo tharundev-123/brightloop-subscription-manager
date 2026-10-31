@@ -65,3 +65,28 @@ export async function sendPasswordResetEmail(
   }
 }
 
+export async function sendEmail(options: {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+}): Promise<{ success: boolean; previewUrl: string | false }> {
+  try {
+    const transporter = await getTransporter();
+    const info = await transporter.sendMail({
+      from: '"Brightloop Software" <no-reply@brightloop.io>',
+      to: options.to,
+      subject: options.subject,
+      text: options.text,
+      html: options.html,
+    });
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`🔗 Ethereal Email Preview URL: ${previewUrl}`);
+    }
+    return { success: true, previewUrl };
+  } catch (err) {
+    console.error('Error sending email:', err);
+    throw err;
+  }
+}

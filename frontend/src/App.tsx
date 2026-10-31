@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
+import { ToastProvider } from './context/ToastContext.tsx';
 import { Login } from './pages/auth/Login.tsx';
 import { Signup } from './pages/auth/Signup.tsx';
 import { ForgotPassword } from './pages/auth/ForgotPassword.tsx';
@@ -44,39 +45,40 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* Public Auth Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+        <ToastProvider>
+          <Routes>
+            {/* Public Auth Routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Root Redirect */}
-          <Route path="/" element={<RootRedirect />} />
+            {/* Root Redirect */}
+            <Route path="/" element={<RootRedirect />} />
 
-          {/* Admin & Staff Internal Workspace */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']} />}>
-            <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/subscriptions" element={<SubscriptionsPage />} />
-              <Route path="/templates" element={<TemplatesPage />} />
-              <Route path="/products" element={<ProductsPage />} />
-              <Route path="/plans" element={<PlansPage />} />
-              <Route path="/taxes-discounts" element={<TaxesDiscountsPage />} />
-              {/* Placeholders for subsequent phases */}
-              <Route path="/invoices" element={<InvoicesPage />} />
-              <Route path="/payments" element={<PaymentsPage />} />
+            {/* Admin & Staff Internal Workspace */}
+            <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']} />}>
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/subscriptions" element={<SubscriptionsPage />} />
+                <Route path="/templates" element={<TemplatesPage />} />
+                <Route path="/products" element={<ProductsPage />} />
+                <Route path="/plans" element={<PlansPage />} />
+                <Route path="/taxes-discounts" element={<TaxesDiscountsPage />} />
+                <Route path="/invoices" element={<InvoicesPage />} />
+                <Route path="/payments" element={<PaymentsPage />} />
+              </Route>
             </Route>
-          </Route>
 
-          {/* Customer Portal Protected Routes */}
-          <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
-            <Route path="/portal" element={<CustomerPortalPage />} />
-          </Route>
+            {/* Customer Portal Protected Routes */}
+            <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
+              <Route path="/portal" element={<CustomerPortalPage />} />
+            </Route>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

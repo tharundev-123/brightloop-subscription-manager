@@ -18,7 +18,12 @@ import {
   FileText,
   Clock,
   Layers,
+  Zap,
+  Download,
+  ShieldAlert,
 } from 'lucide-react';
+import { ProrationModal } from '../../components/subscriptions/ProrationModal.tsx';
+import { useToast } from '../../context/ToastContext.tsx';
 
 interface SubscriptionLine {
   id: string;
@@ -44,6 +49,7 @@ interface Subscription {
   paymentTerms: string;
   totalAmount: number;
   isPaused: boolean;
+  dunningStatus?: string;
   notes: string | null;
   customer?: { id: string; name: string; email: string };
   plan?: {
@@ -60,6 +66,10 @@ interface Subscription {
 
 export const SubscriptionsPage: React.FC = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [prorationSub, setProrationSub] = useState<any>(null);
+  const [isProrationOpen, setIsProrationOpen] = useState(false);
+  const [isDunningRunning, setIsDunningRunning] = useState(false);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -244,7 +254,37 @@ export const SubscriptionsPage: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: string, isPaused?: boolean) => {
+  const handleRunDunning = async () => {
+    try {
+      setIsDunningRunning(true);
+      const res = await api.post('/subscriptions/dunning/run');
+      toast.success(
+        'Dunning Scan Completed!',
+        `Overdue: ${res.data.report.overdueInvoicesFound}, Reminders: ${res.data.report.remindersSent}, Past Due: ${res.data.report.subscriptionsPastDue}, Suspended: ${res.data.report.subscriptionsSuspended}`
+      );
+      fetchSubscriptions();
+    } catch (err: any) {
+      toast.error('Dunning scan failed', err.response?.data?.error || err.message);
+    } finally {
+      setIsDunningRunning(false);
+    }
+  };
+
+  const getStatusBadge = (status: string, isPaused?: boolean, dunningStatus?: string) => {
+    if (dunningStatus === 'SUSPENDED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-900 text-white shadow-sm">
+          <ShieldAlert className="w-2.5 h-2.5" /> SUSPENDED
+        </span>
+      );
+    }
+    if (dunningStatus === 'PAST_DUE') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+          <AlertCircle className="w-2.5 h-2.5" /> PAST DUE
+        </span>
+      );
+    }
     if (isPaused) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
@@ -381,7 +421,7 @@ export const SubscriptionsPage: React.FC = () => {
                         {sub.plan?.billingPeriod}
                       </span>
                     </td>
-                    <td className="py-3 px-4">{getStatusBadge(sub.status, sub.isPaused)}</td>
+                    <td className="py-3 px-4">{getStatusBadge(sub.status, sub.isPaused, sub.dunningStatus)}</td>
                     <td className="py-3 px-4 text-slate-500">
                       {sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : '—'}
                     </td>

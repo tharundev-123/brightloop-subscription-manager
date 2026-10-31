@@ -21,6 +21,7 @@ model User {
   subscriptions    Subscription[] @relation("CustomerSubscriptions")
   invoices         Invoice[]      @relation("CustomerInvoices")
   paymentsRecorded Payment[]      @relation("RecordedPayments")
+  creditNotes      CreditNote[]
 
   @@index([email])
   @@index([role])
@@ -125,6 +126,7 @@ model Subscription {
   paymentTerms       String             @default("IMMEDIATE") // IMMEDIATE, NET_15, NET_30
   totalAmount        Float              @default(0.0)
   isPaused           Boolean            @default(false)
+  dunningStatus      String             @default("CURRENT") // CURRENT, REMINDER_SENT, PAST_DUE, SUSPENDED
   notes              String?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -134,6 +136,7 @@ model Subscription {
   template           QuotationTemplate? @relation(fields: [templateId], references: [id])
   lines              SubscriptionLine[]
   invoices           Invoice[]
+  usageEvents        UsageEvent[]
 
   @@index([customerId])
   @@index([status])
@@ -184,6 +187,7 @@ model Invoice {
   customer          User          @relation("CustomerInvoices", fields: [customerId], references: [id])
   lines             InvoiceLine[]
   payments          Payment[]
+  creditNotes       CreditNote[]
 
   // IDEMPOTENCY: Guarantee no subscription can ever be billed twice for the same billing period
   @@unique([subscriptionId, billingPeriod])
@@ -262,4 +266,62 @@ model Discount {
   product           Product?  @relation(fields: [productId], references: [id])
 
   @@index([code])
+}
+
+model CreditNote {
+  id               String   @id @default(uuid())
+  creditNoteNumber String   @unique // e.g. CN-0001
+  invoiceId        String
+  customerId       String
+  amount           Float    @default(0.0)
+  reason           String
+  status           String   @default("ISSUED") // ISSUED, REFUNDED, APPLIED
+  createdAt        DateTime @default(now())
+
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  customer         User     @relation(fields: [customerId], references: [id])
+
+  @@index([invoiceId])
+  @@index([customerId])
+}
+
+model UsageEvent {
+  id             String   @id @default(uuid())
+  subscriptionId String
+  metricName     String   // e.g. "api_calls", "seats", "storage_gb"
+  quantity       Float    @default(0.0)
+  timestamp      DateTime @default(now())
+  processed      Boolean  @default(false)
+
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, metricName])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  userName   String?
+  action     String   // "SUBSCRIPTION_CREATED", "STATUS_CHANGE", "PLAN_UPGRADE", "INVOICE_PAID", "CREDIT_NOTE_ISSUED", "DUNNING_TRIGGERED", "ODOO_SYNC"
+  entityType String   // "Subscription", "Invoice", "Payment", "Plan", "OdooSync", "CreditNote"
+  entityId   String
+  details    String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model OdooSyncRecord {
+  id           String   @id @default(uuid())
+  entityType   String   // "CUSTOMER", "PRODUCT", "INVOICE"
+  localId      String
+  odooId       Int
+  syncStatus   String   @default("SYNCED") // SYNCED, PENDING, FAILED
+  details      String?
+  lastSyncedAt DateTime @default(now())
+
+  @@index([entityType, localId])
+  @@index([odooId])
 }

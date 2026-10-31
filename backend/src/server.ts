@@ -13,6 +13,11 @@ import invoiceRoutes from './routes/invoice.routes.ts';
 import paymentRoutes from './routes/payment.routes.ts';
 import dashboardRoutes from './routes/dashboard.routes.ts';
 import portalRoutes from './routes/portal.routes.ts';
+import creditNoteRoutes from './routes/creditNote.routes.ts';
+import usageRoutes from './routes/usage.routes.ts';
+import auditRoutes from './routes/audit.routes.ts';
+import odooRoutes from './routes/odoo.routes.ts';
+import exportRoutes from './routes/export.routes.ts';
 import { initBillingCron } from './cron/billing.cron.ts';
 
 dotenv.config();
@@ -49,6 +54,11 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/portal', portalRoutes);
+app.use('/api/credit-notes', creditNoteRoutes);
+app.use('/api/usage', usageRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/odoo', odooRoutes);
+app.use('/api/export', exportRoutes);
 
 // Central Error Handler
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {

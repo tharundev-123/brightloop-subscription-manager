@@ -7,6 +7,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -15,7 +16,10 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   children,
   maxWidth = 'lg',
+  size,
 }) => {
+  const effectiveSize = size || maxWidth;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -38,7 +42,7 @@ export const Modal: React.FC<ModalProps> = ({
     lg: 'max-w-lg',
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
-  }[maxWidth];
+  }[effectiveSize];
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -48,8 +52,9 @@ export const Modal: React.FC<ModalProps> = ({
           className={`relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthClass} border border-slate-200`}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+            <h3 className="text-base font-bold text-slate-900 tracking-tight">{title}</h3>
             <button
               onClick={onClose}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
@@ -57,10 +62,11 @@ export const Modal: React.FC<ModalProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="px-6 py-5 max-h-[80vh] overflow-y-auto">{children}</div>
+
+          {/* Body */}
+          <div className="px-6 py-4">{children}</div>
         </div>
       </div>
     </div>
   );
 };
-

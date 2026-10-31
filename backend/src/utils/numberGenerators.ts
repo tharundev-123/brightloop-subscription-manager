@@ -3,6 +3,7 @@ import prisma from './prisma.ts';
 let subSeq: number | null = null;
 let invSeq: number | null = null;
 let paySeq: number | null = null;
+let cnSeq: number | null = null;
 
 export async function generateSubscriptionNumber(): Promise<string> {
   if (subSeq === null) {
@@ -50,6 +51,23 @@ export async function generatePaymentNumber(): Promise<string> {
   while (await prisma.payment.findUnique({ where: { paymentNumber: candidate } })) {
     paySeq++;
     candidate = `PAY-${String(paySeq).padStart(5, '0')}`;
+  }
+
+  return candidate;
+}
+
+export async function generateCreditNoteNumber(): Promise<string> {
+  if (cnSeq === null) {
+    const total = await prisma.creditNote.count();
+    cnSeq = total + 1;
+  } else {
+    cnSeq++;
+  }
+
+  let candidate = `CN-${String(cnSeq).padStart(5, '0')}`;
+  while (await prisma.creditNote.findUnique({ where: { creditNoteNumber: candidate } })) {
+    cnSeq++;
+    candidate = `CN-${String(cnSeq).padStart(5, '0')}`;
   }
 
   return candidate;

@@ -16,7 +16,13 @@ import {
   ArrowRight,
   Clock,
   Sparkles,
+  CreditCard,
+  FileMinus,
+  BellRing,
 } from 'lucide-react';
+import { CheckoutModal } from '../../components/invoices/CheckoutModal.tsx';
+import { CreditNoteModal } from '../../components/invoices/CreditNoteModal.tsx';
+import { useToast } from '../../context/ToastContext.tsx';
 
 interface InvoiceLine {
   id: string;
@@ -53,6 +59,11 @@ interface Invoice {
 
 export const InvoicesPage: React.FC = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [checkoutInvoice, setCheckoutInvoice] = useState<any>(null);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [creditNoteInvoice, setCreditNoteInvoice] = useState<any>(null);
+  const [isCreditNoteOpen, setIsCreditNoteOpen] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -158,6 +169,21 @@ export const InvoicesPage: React.FC = () => {
       alert(err.response?.data?.error || 'Failed to cancel invoice');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleSendReminder = async (invoiceId: string) => {
+    try {
+      const res = await api.post('/subscriptions/dunning/remind', { invoiceId });
+      toast.success(
+        'Overdue reminder dispatched!',
+        `Sent notice to ${res.data.customerEmail} for Invoice ${res.data.invoiceNumber}.`
+      );
+      if (res.data.emailResult?.previewUrl) {
+        window.open(res.data.emailResult.previewUrl, '_blank');
+      }
+    } catch (err: any) {
+      toast.error('Failed to send reminder', err.response?.data?.error || err.message);
     }
   };
 
@@ -433,6 +459,22 @@ export const InvoicesPage: React.FC = () => {
         </div>
       </Modal>
 
+      {/* Online Checkout Modal */}
+      <CheckoutModal
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        invoice={checkoutInvoice}
+        onSuccess={fetchInvoices}
+      />
+
+      {/* Credit Note Modal */}
+      <CreditNoteModal
+        isOpen={isCreditNoteOpen}
+        onClose={() => setIsCreditNoteOpen(false)}
+        invoice={creditNoteInvoice}
+        onSuccess={fetchInvoices}
+      />
+
       {/* Modal: Invoice Detail, Print & PDF */}
       <Modal
         isOpen={isDetailModalOpen}
@@ -481,6 +523,40 @@ export const InvoicesPage: React.FC = () => {
                 >
                   <Printer className="w-3.5 h-3.5" /> Print
                 </button>
+
+                {selectedInvoice.outstandingAmount > 0 && selectedInvoice.status !== 'PAID' && selectedInvoice.status !== 'CANCELLED' && (
+                  <button
+                    onClick={() => {
+                      setCheckoutInvoice(selectedInvoice);
+                      setIsCheckoutOpen(true);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition flex items-center gap-1 shadow-sm"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" /> Pay Now
+                  </button>
+                )}
+
+                {selectedInvoice.status !== 'CANCELLED' && (
+                  <button
+                    onClick={() => {
+                      setCreditNoteInvoice(selectedInvoice);
+                      setIsCreditNoteOpen(true);
+                    }}
+                    className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-lg font-semibold transition flex items-center gap-1"
+                  >
+                    <FileMinus className="w-3.5 h-3.5" /> Issue Credit
+                  </button>
+                )}
+
+                {selectedInvoice.outstandingAmount > 0 && selectedInvoice.status === 'CONFIRMED' && (
+                  <button
+                    onClick={() => handleSendReminder(selectedInvoice.id)}
+                    className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 rounded-lg font-semibold transition flex items-center gap-1"
+                    title="Send Overdue Dunning Email with 1-Click Pay Link"
+                  >
+                    <BellRing className="w-3.5 h-3.5 text-amber-600" /> Remind
+                  </button>
+                )}
 
                 {selectedInvoice.status !== 'CANCELLED' && selectedInvoice.status !== 'PAID' && (
                   <button
@@ -639,7 +715,24 @@ export const InvoicesPage: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      {/* Online Checkout Modal */}
+      <CheckoutModal
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        invoice={checkoutInvoice}
+        onSuccess={fetchInvoices}
+      />
+
+      {/* Credit Note Modal */}
+      <CreditNoteModal
+        isOpen={isCreditNoteOpen}
+        onClose={() => setIsCreditNoteOpen(false)}
+        invoice={creditNoteInvoice}
+        onSuccess={fetchInvoices}
+      />
     </div>
   );
 };
+
 

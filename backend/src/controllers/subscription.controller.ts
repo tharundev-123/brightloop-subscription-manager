@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import prisma from '../utils/prisma.ts';
 import { AuthRequest } from '../middleware/auth.middleware.ts';
 import { generateSubscriptionNumber } from '../utils/numberGenerators.ts';
+import { prorationService } from '../services/proration.service.ts';
+import { dunningService } from '../services/dunning.service.ts';
 
 // Valid transitions dictionary
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -529,3 +531,77 @@ export async function closeSubscription(req: AuthRequest, res: Response): Promis
   }
 }
 
+
+
+/**
+ * Preview mid-cycle plan upgrade/downgrade proration
+ */
+export async function previewPlanProration(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { newPlanId } = req.query;
+
+    if (!newPlanId || typeof newPlanId !== 'string') {
+      res.status(400).json({ error: 'Query parameter newPlanId is required.' });
+      return;
+    }
+
+    const preview = await prorationService.previewPlanChange(id, newPlanId);
+    res.json(preview);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Execute mid-cycle plan change with prorated adjustment invoice or credit note
+ */
+export async function changeSubscriptionPlan(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { newPlanId } = req.body;
+
+    if (!newPlanId) {
+      res.status(400).json({ error: 'newPlanId is required in request body.' });
+      return;
+    }
+
+    const result = await prorationService.executePlanChange(id, newPlanId, req.user?.id, req.user?.name);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Run automated dunning scan across overdue subscriptions
+ */
+export async function runDunningScan(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const report = await dunningService.runDunningScan(req.user?.id, req.user?.name);
+    res.json({
+      message: 'Dunning recovery scan completed.',
+      report,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Send overdue reminder email to customer for specific invoice
+ */
+export async function sendInvoiceDunningReminder(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { invoiceId } = req.body;
+    if (!invoiceId) {
+      res.status(400).json({ error: 'invoiceId is required.' });
+      return;
+    }
+
+    const result = await dunningService.sendReminderEmail(invoiceId, req.user?.id, req.user?.name);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}

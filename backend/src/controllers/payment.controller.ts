@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../utils/prisma.ts';
 import { AuthRequest } from '../middleware/auth.middleware.ts';
 import { generatePaymentNumber } from '../utils/numberGenerators.ts';
+import { logAudit } from '../utils/audit.ts';
 
 /**
  * Record a payment against an invoice (Admin & Staff)
@@ -59,52 +60,65 @@ export async function recordPayment(req: AuthRequest, res: Response): Promise<vo
     const paymentNumber = await generatePaymentNumber();
     const pDate = paymentDate ? new Date(paymentDate) : new Date();
 
-    // Execute in Prisma Transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Create payment
-      const payment = await tx.payment.create({
+    // Atomic transaction: create Payment & update Invoice
+    const [payment, updatedInvoice] = await prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
         data: {
           paymentNumber,
           invoiceId,
           amount: payAmount,
           paymentMethod: method,
           paymentDate: pDate,
-          notes: notes ? String(notes).trim() : null,
+          notes: notes || null,
           recordedById: req.user!.id,
         },
         include: {
-          recordedBy: { select: { id: true, name: true } },
+          invoice: {
+            select: { invoiceNumber: true },
+          },
+          recordedBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
 
-      // 2. Compute new totals
-      const newPaid = invoice.paidAmount + payAmount;
-      const newOutstanding = Math.max(0, invoice.totalAmount - newPaid);
-      const isFullyPaid = newOutstanding <= 0.001;
+      const newPaidAmount = Number((invoice.paidAmount + payAmount).toFixed(2));
+      const newOutstandingAmount = Math.max(0, Number((invoice.outstandingAmount - payAmount).toFixed(2)));
+      const newStatus = newOutstandingAmount === 0 ? 'PAID' : 'CONFIRMED';
 
-      // 3. Update invoice status
-      const updatedInvoice = await tx.invoice.update({
+      const inv = await tx.invoice.update({
         where: { id: invoiceId },
         data: {
-          paidAmount: parseFloat(newPaid.toFixed(2)),
-          outstandingAmount: parseFloat(newOutstanding.toFixed(2)),
-          status: isFullyPaid ? 'PAID' : 'CONFIRMED', // Partial payment confirms the invoice
-        },
-        include: {
-          customer: true,
-          subscription: true,
+          paidAmount: newPaidAmount,
+          outstandingAmount: newOutstandingAmount,
+          status: newStatus,
         },
       });
 
-      return { payment, updatedInvoice, isFullyPaid };
+      return [p, inv];
+    });
+
+    // Check if subscription was in dunning status, clear it if fully paid
+    if (invoice.subscriptionId && updatedInvoice.outstandingAmount === 0) {
+      await prisma.subscription.update({
+        where: { id: invoice.subscriptionId },
+        data: { dunningStatus: 'CURRENT', isPaused: false },
+      });
+    }
+
+    await logAudit({
+      userId: req.user?.id,
+      userName: req.user?.name,
+      action: 'PAYMENT_RECORDED',
+      entityType: 'Payment',
+      entityId: payment.id,
+      details: `Recorded payment ${paymentNumber} of $${payAmount} (${method}) for Invoice ${invoice.invoiceNumber}. New Invoice Status: ${updatedInvoice.status}`,
     });
 
     res.status(201).json({
-      message: result.isFullyPaid
-        ? `Payment recorded! Invoice ${result.updatedInvoice.invoiceNumber} is now PAID IN FULL.`
-        : `Partial payment of $${payAmount.toFixed(2)} recorded. Outstanding balance: $${result.updatedInvoice.outstandingAmount.toFixed(2)}.`,
-      payment: result.payment,
-      invoice: result.updatedInvoice,
+      message: 'Payment recorded successfully.',
+      payment,
+      invoice: updatedInvoice,
     });
   } catch (err: any) {
     console.error('Record payment error:', err);
@@ -113,7 +127,7 @@ export async function recordPayment(req: AuthRequest, res: Response): Promise<vo
 }
 
 /**
- * List all payments with pagination & search (Admin & Staff)
+ * List Payments (Admin & Staff)
  */
 export async function listPayments(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -121,20 +135,12 @@ export async function listPayments(req: AuthRequest, res: Response): Promise<voi
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
     const skip = (page - 1) * limit;
 
-    const method = req.query.method as string | undefined;
-    const search = req.query.search as string | undefined;
+    const invoiceId = req.query.invoiceId as string | undefined;
+    const paymentMethod = req.query.paymentMethod as string | undefined;
 
     const where: any = {};
-    if (method) {
-      where.paymentMethod = method.toUpperCase();
-    }
-    if (search) {
-      where.OR = [
-        { paymentNumber: { contains: search } },
-        { invoice: { invoiceNumber: { contains: search } } },
-        { invoice: { customer: { name: { contains: search } } } },
-      ];
-    }
+    if (invoiceId) where.invoiceId = invoiceId;
+    if (paymentMethod) where.paymentMethod = paymentMethod;
 
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
@@ -145,12 +151,14 @@ export async function listPayments(req: AuthRequest, res: Response): Promise<voi
               id: true,
               invoiceNumber: true,
               totalAmount: true,
-              outstandingAmount: true,
-              status: true,
-              customer: { select: { id: true, name: true, email: true } },
+              customer: {
+                select: { id: true, name: true, email: true },
+              },
             },
           },
-          recordedBy: { select: { id: true, name: true } },
+          recordedBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
         orderBy: { paymentDate: 'desc' },
         skip,
@@ -175,7 +183,7 @@ export async function listPayments(req: AuthRequest, res: Response): Promise<voi
 }
 
 /**
- * View Outstanding Invoices (invoices where outstandingAmount > 0 and status != CANCELLED)
+ * View Outstanding Invoices (partially paid or unpaid, confirmed)
  */
 export async function getOutstandingInvoices(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -184,8 +192,8 @@ export async function getOutstandingInvoices(req: AuthRequest, res: Response): P
     const skip = (page - 1) * limit;
 
     const where = {
+      status: 'CONFIRMED',
       outstandingAmount: { gt: 0 },
-      status: { notIn: ['CANCELLED', 'PAID'] },
     };
 
     const [invoices, total] = await Promise.all([
@@ -262,3 +270,108 @@ export async function getOverdueInvoices(req: AuthRequest, res: Response): Promi
   }
 }
 
+/**
+ * Process Instant Online Checkout (Stripe / Razorpay Flow)
+ * Accessible by Customer (for their own invoice) or Staff/Admin
+ */
+export async function processOnlineCheckout(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { invoiceId, amount, paymentMethod, cardDetails } = req.body;
+
+    if (!invoiceId) {
+      res.status(400).json({ error: 'invoiceId is required.' });
+      return;
+    }
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { customer: true, subscription: true },
+    });
+
+    if (!invoice) {
+      res.status(404).json({ error: 'Invoice not found.' });
+      return;
+    }
+
+    // Scoping check for customers
+    if (req.user?.role === 'CUSTOMER' && invoice.customerId !== req.user.id) {
+      res.status(403).json({ error: 'Access denied: not your invoice.' });
+      return;
+    }
+
+    if (invoice.status === 'PAID' || invoice.outstandingAmount <= 0) {
+      res.status(400).json({ error: 'Invoice is already paid in full.' });
+      return;
+    }
+
+    const payAmount = amount ? parseFloat(amount) : invoice.outstandingAmount;
+    if (isNaN(payAmount) || payAmount <= 0) {
+      res.status(400).json({ error: 'Invalid payment amount.' });
+      return;
+    }
+
+    // Simulate gateway authorization
+    const last4 = cardDetails?.cardNumber ? String(cardDetails.cardNumber).slice(-4) : '4242';
+    const gatewayTxId = `ch_sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const paymentNumber = await generatePaymentNumber();
+
+    const newPaidAmount = Number((invoice.paidAmount + payAmount).toFixed(2));
+    const newOutstanding = Math.max(0, Number((invoice.outstandingAmount - payAmount).toFixed(2)));
+    const newStatus = newOutstanding === 0 ? 'PAID' : 'CONFIRMED';
+
+    const recordedById = req.user?.id || invoice.customerId;
+
+    const [payment, updatedInvoice] = await prisma.$transaction([
+      prisma.payment.create({
+        data: {
+          paymentNumber,
+          invoiceId,
+          amount: payAmount,
+          paymentMethod: paymentMethod || 'CARD',
+          paymentDate: new Date(),
+          recordedById,
+          notes: `Instant Online Checkout (${paymentMethod || 'Stripe Card'} ending ${last4}) | TxID: ${gatewayTxId}`,
+        },
+      }),
+      prisma.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          paidAmount: newPaidAmount,
+          outstandingAmount: newOutstanding,
+          status: newStatus,
+        },
+      }),
+    ]);
+
+    // If subscription was in dunning status, clear it
+    if (invoice.subscriptionId && newOutstanding === 0) {
+      await prisma.subscription.update({
+        where: { id: invoice.subscriptionId },
+        data: {
+          dunningStatus: 'CURRENT',
+          isPaused: false,
+        },
+      });
+    }
+
+    await logAudit({
+      userId: req.user?.id,
+      userName: req.user?.name || 'Customer Checkout',
+      action: 'ONLINE_PAYMENT_SUCCESS',
+      entityType: 'Payment',
+      entityId: payment.id,
+      details: `Processed online payment ${paymentNumber} of $${payAmount} via ${paymentMethod || 'Stripe Card'} for Invoice ${invoice.invoiceNumber}. New Invoice Status: ${newStatus}`,
+    });
+
+    res.json({
+      success: true,
+      message: 'Payment processed successfully.',
+      payment,
+      invoice: updatedInvoice,
+      gatewayTransactionId: gatewayTxId,
+    });
+  } catch (err: any) {
+    console.error('Online checkout error:', err);
+    res.status(500).json({ error: err.message || 'Payment processing failed.' });
+  }
+}
